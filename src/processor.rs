@@ -15,7 +15,7 @@ use solana_program::{
 use crate::{
     error::IntroError,
     instruction::StudentInstruction,
-    state::{ReplyCount, StudentIntroState},
+    state::{ReplyCount, StudentIntroState, StudentReplyState},
 };
 
 pub fn process_instruction(
@@ -157,9 +157,9 @@ pub fn update_intro(
     let account_info_iter = &mut accounts.iter();
 
     let writer = next_account_info(account_info_iter)?;
-    let pda_account = next_account_info(account_info_iter)?;
+    let pda_intro = next_account_info(account_info_iter)?;
 
-    if pda_account.owner != program_id {
+    if pda_intro.owner != program_id {
         return Err(ProgramError::IllegalOwner);
     }
 
@@ -169,12 +169,12 @@ pub fn update_intro(
     }
 
     let mut intro_data =
-        try_from_slice_unchecked::<StudentIntroState>(&pda_account.data.borrow()).unwrap();
+        try_from_slice_unchecked::<StudentIntroState>(&pda_intro.data.borrow()).unwrap();
 
     let (pda, _bump_seed) =
         Pubkey::find_program_address(&[writer.key.as_ref(), "intro".as_ref()], program_id);
 
-    if pda != *pda_account.key {
+    if pda != *pda_intro.key {
         msg!("Invalid seeds for PDA");
         return Err(IntroError::InvalidPDA.into());
     }
@@ -190,7 +190,7 @@ pub fn update_intro(
     }
 
     intro_data.message = message;
-    intro_data.serialize(&mut &mut pda_account.data.borrow_mut()[..])?;
+    intro_data.serialize(&mut &mut pda_intro.data.borrow_mut()[..])?;
 
     Ok(())
 }
@@ -203,6 +203,69 @@ pub fn reply_intro(
 ) -> ProgramResult {
     msg!("{}, {}, {}", program_id, name, message);
     let account_info_iter = &mut accounts.iter();
+
+    let replier = next_account_info(account_info_iter)?;
+    let pda_intro = next_account_info(account_info_iter)?;
+    let pda_counter = next_account_info(account_info_iter)?;
+    let pda_reply = next_account_info(account_info_iter)?;
+    let system_program = next_account_info(account_info_iter)?;
+
+    let mut counter_data =
+        try_from_slice_unchecked::<ReplyCount>(&pda_counter.data.borrow()).unwrap();
+
+    let account_len = StudentReplyState::get_account_size(name.clone(), message.clone());
+    let rent = Rent::get()?;
+    let rent_lamports = rent.minimum_balance(account_len);
+
+    let (pda, bump_seed) = Pubkey::find_program_address(
+        &[
+            pda_intro.key.as_ref(),
+            counter_data.counter.to_be_bytes().as_ref(),
+        ],
+        program_id,
+    );
+
+    if pda != *pda_reply.key {
+        msg!("Invalid seeds for PDA");
+        return Err(IntroError::InvalidPDA.into());
+    }
+
+    invoke_signed(
+        &system_instruction::create_account(
+            replier.key,
+            pda_reply.key,
+            rent_lamports,
+            account_len.try_into().unwrap(),
+            program_id,
+        ),
+        &[replier.clone(), pda_reply.clone(), system_program.clone()],
+        &[&[
+            pda_intro.key.as_ref(),
+            counter_data.counter.to_be_bytes().as_ref(),
+            &[bump_seed],
+        ]],
+    )?;
+    msg!("Created Reply Account");
+
+    let mut reply_data =
+        try_from_slice_unchecked::<StudentReplyState>(&pda_reply.data.borrow()).unwrap();
+
+    if reply_data.is_initialized() {
+        msg!("Account already intitialized");
+        return Err(ProgramError::AccountAlreadyInitialized);
+    }
+
+    reply_data.discriminator = StudentReplyState::DISCRIMINATOR.to_string();
+    reply_data.intro = *pda_intro.key;
+    reply_data.replier = *replier.key;
+    reply_data.name = name;
+    reply_data.message = message;
+    reply_data.is_initialized = true;
+
+    counter_data.counter += 1;
+
+    reply_data.serialize(&mut &mut pda_reply.data.borrow_mut()[..])?;
+    counter_data.serialize(&mut &mut pda_counter.data.borrow_mut()[..])?;
 
     Ok(())
 }
