@@ -277,5 +277,85 @@ pub fn reply_intro(
 }
 
 pub fn initialize_token_mint(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+
+    let initializer = next_account_info(account_info_iter)?;
+    let token_mint = next_account_info(account_info_iter)?;
+    let mint_auth = next_account_info(account_info_iter)?;
+    let system_program = next_account_info(account_info_iter)?;
+    let token_program = next_account_info(account_info_iter)?;
+    let token_program = next_account_info(account_info_iter)?;
+    let sysvar_rent = next_account_info(account_info_iter)?;
+
+    let (mint_pda, mint_bump) = Pubkey::find_program_address(&[b"token_mint"], program_id);
+    let (mint_auth_pda, _mint_auth_bump) =
+        Pubkey::find_program_address(&[b"token_auth"], program_id);
+
+    msg!("Token mint: {:?}", mint_pda);
+    msg!("Mint authority: {:?}", mint_auth_pda);
+
+    if mint_pda != *token_mint.key {
+        msg!("Incorrect token mint account");
+        return Err(IntroError::IncorrectAccountError.into());
+    }
+
+    if *token_program.key != TOKEN_PROGRAM_ID {
+        msg!("Incorrect token program");
+        return Err(IntroError::IncorrectAccountError.into());
+    }
+
+    if *mint_auth.key != mint_auth_pda {
+        msg!("Incorrect mint auth account");
+        return Err(IntroError::IncorrectAccountError.into());
+    }
+
+    if *system_program.key != SYSTEM_PROGRAM_ID {
+        msg!("Incorrect system program");
+        return Err(IntroError::IncorrectAccountError.into());
+    }
+
+    if *sysvar_rent.key != RENT_PROGRAM_ID {
+        msg!("Incorrect rent program");
+        return Err(IntroError::IncorrectAccountError.into());
+    }
+
+    let rent = Rent::get()?;
+    let rent_lamports = rent.minimum_balance(82);
+
+    invoke_signed(
+        &system_instruction::create_account(
+            initializer.key,
+            token_mint.key,
+            rent_lamports,
+            82, // Size of the token mint account
+            token_program.key,
+        ),
+        // Accounts we're reading from or writing to
+        &[
+            initializer.clone(),
+            token_mint.clone(),
+            system_program.clone(),
+        ],
+        // Seeds for our token mint account
+        &[&[b"token_mint", &[mint_bump]]],
+    )?;
+    msg!("Created token mint account");
+
+    // Initialize the mint account
+    invoke_signed(
+        &initialize_mint(
+            token_program.key,
+            token_mint.key,
+            mint_auth.key,
+            Option::None, // Freeze authority - we don't want anyone to be able to freeze!
+            9,            // Number of decimals
+        )?,
+        // Which accounts we're reading from or writing to
+        &[token_mint.clone(), sysvar_rent.clone(), mint_auth.clone()],
+        // The seeds for our token mint PDA
+        &[&[b"token_mint", &[mint_bump]]],
+    )?;
+    msg!("Initialized token mint");
+
     Ok(())
 }

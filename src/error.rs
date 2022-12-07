@@ -9,6 +9,8 @@ pub enum IntroError {
     InvalidPDA,
     #[error("Input data exceeds max length")]
     InvalidDataLength,
+    #[error("Accounts are not same")]
+    IncorrectAccountError,
 }
 
 impl From<IntroError> for ProgramError {
