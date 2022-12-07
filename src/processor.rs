@@ -4,13 +4,17 @@ use solana_program::{
     borsh::try_from_slice_unchecked,
     entrypoint::ProgramResult,
     msg,
+    native_token::LAMPORTS_PER_SOL,
     program::invoke_signed,
     program_error::ProgramError,
     program_pack::IsInitialized,
     pubkey::Pubkey,
     system_instruction,
-    sysvar::{rent::Rent, Sysvar},
+    system_program::ID as SYSTEM_PROGRAM_ID,
+    sysvar::{rent::Rent, rent::ID as RENT_PROGRAM_ID, Sysvar},
 };
+use spl_associated_token_account::get_associated_token_address;
+use spl_token::{instruction::initialize_mint, ID as TOKEN_PROGRAM_ID};
 
 use crate::{
     error::IntroError,
@@ -37,6 +41,8 @@ pub fn process_instruction(
         StudentInstruction::ReplyIntro { name, message } => {
             reply_intro(program_id, accounts, name, message)
         }
+
+        StudentInstruction::InitializeMint => initialize_token_mint(program_id, accounts),
     }
 }
 
@@ -267,5 +273,9 @@ pub fn reply_intro(
     reply_data.serialize(&mut &mut pda_reply.data.borrow_mut()[..])?;
     counter_data.serialize(&mut &mut pda_counter.data.borrow_mut()[..])?;
 
+    Ok(())
+}
+
+pub fn initialize_token_mint(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     Ok(())
 }
