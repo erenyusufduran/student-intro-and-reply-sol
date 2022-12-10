@@ -77,7 +77,7 @@ pub fn student_intro(
     }
 
     let (pda_count, _counter_bump_seed) =
-        Pubkey::find_program_address(&[pda.as_ref(), "comment".as_ref()], program_id);
+        Pubkey::find_program_address(&[pda.as_ref(), "counter".as_ref()], program_id);
 
     if pda_count != *counter_pda.key {
         msg!("Invalid seeds for counter PDA.");
